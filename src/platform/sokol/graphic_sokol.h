@@ -14,10 +14,6 @@
 
 // TODO: should I be able to grab an initialized sokol context?
 
-// TODO: sokol has a fontstash, but I don't think it has an actual font class. I dont understand how it switches between fonts yet.
-//       Do we make a single stash per font?
-
-
 // Adding all sokol headers here for my reference. (for future me: sokol system headers are on AUR)
 // Delete unneeded includes later!
 
@@ -65,10 +61,11 @@ private:
   // For the sokol / fonstash implementation, the instantiated font classes will share a fontstash context, which keeps track of the
   // currently loaded fonts and indexes them by an integer. We create a map from the microtex implementation of a font to that index.
   // 
-  //
   // The microtex implementation of a font has a fontname, style (normal/bold/italic), and size. The fonstrash implementation has a
   // dpi scale which is determined by the sokol context, but the size of a font is set in the 'state' of the fontstash context, which
   // is independant of the font data. so we need to remember that here.
+  //
+  // TODO: figure out how to deal with dpi scale, and maybe how to manage sokol context.
   //
   // Following fontstash-sapp, when we create a new font, we should check if the font data is already loaded in the atlas, and then
   // if not, submit the fonts to load to via sfetch, using the name/style pair to find the file.
@@ -80,6 +77,12 @@ private:
   // when we finally draw the font, we'll need to set the fontstash context's state size, (I assume with the graphics2D class), and
   // after that we can then call sokols render text function (presumable in graphics2D too) which renders "byteStrings," arrays of
   // bytes, as characters on screen.
+  //
+  // references:
+  // https://github.com/floooh/sokol-samples/blob/master/sapp/fontstash-sapp.c
+  // https://github.com/floooh/sokol-samples/blob/master/libs/fontstash/fontstash.h
+  // https://github.com/floooh/sokol/blob/master/sokol_fetch.h
+  //
 
   static FONScontext fons; // The fontstash context
 
