@@ -13,315 +13,289 @@
 using namespace tex;
 using namespace std;
 
-QMap<QString, QString> Font_qt::_loaded_families;
+//std::map<std::pair<std::string, int>, int> Font_skia::_test;
+//std::map<std::pair<std::string, int>, sk_sp<SkTypeface>> Font_skia::_named_typefaces;
+//std::map<std::string, sk_sp<SkTypeface>> Font_skia::_file_typefaces;
 
-namespace tex {
-// Some wstrings arrive with a \0 at end, so we remove when converting
-QString wstring_to_QString(const std::wstring& ws)
-{
-  QString out = QString::fromStdWString(ws);
-  auto index = out.indexOf(QChar('\0'));
-  if (index != -1)
-    out.truncate(index);
-  return out;
-}
-}
+//SkFont::Edging Font_skia::Edging {SkFont::Edging::kAntiAlias};
+//SkFontHinting Font_skia::Hinting {SkFontHinting::kNone};
 
-Font_qt::Font_qt(const string& family, int style, float size) {
+/*Font_skia::Font_skia(sk_sp<SkTypeface> typeface, float size) {
+  _font.setTypeface(std::move(typeface));
+  _font.setSubpixel(true);
+  _font.setHinting(Hinting);
+  _font.setEdging(Edging);
+  _font.setSize(size);
+}*/
 
-//  qInfo() << "new font" << QString::fromStdString(family) << style << size;
-
-  _font.setFamily(QString::fromStdString(family));
-  _font.setPointSizeF(size);
-
-  _font.setBold(style & BOLD);
-  _font.setItalic(style & ITALIC);
-}
-
-Font_qt::Font_qt(const string& file, float size)
-{
-//  qInfo() << "new font" << QString::fromStdString(file) << size;
-
-  // set size for newly loaded and previously loaded font
-  _font.setPointSizeF(size);
-
-  QString filename(QString::fromStdString(file));
-  if(!QFile::exists(filename)) {
-      filename.prepend(":/");
-//      qInfo() << "new filename" << filename;
+/*sk_sp<SkTypeface> Font_skia::loadTypefaceFromName(const string &family, int style) {
+  auto key = std::make_pair(family, style);
+  if (auto it = _named_typefaces.find(key); it != _named_typefaces.end()) {
+    return it->second;
+  } else {
+    SkFontStyle fontStyle(style & BOLD ? SkFontStyle::kBold_Weight : SkFontStyle::kNormal_Weight,
+                          SkFontStyle::kNormal_Width,
+                          style & ITALIC ? SkFontStyle::kItalic_Slant : SkFontStyle::kUpright_Slant);
+    auto typeface = SkTypeface::MakeFromName(family.c_str(), fontStyle);
+    _named_typefaces[key] = typeface;
+    return typeface;
   }
+}*/
 
-  if(_loaded_families.contains(filename)) {
-    // file already loaded
-    _font.setFamily(_loaded_families.value(filename));
+/*sk_sp<SkTypeface> Font_skia::loadTypefaceFromFile(const string &file) {
+  if (auto it = _file_typefaces.find(file); it != _file_typefaces.end()) {
 #ifdef HAVE_LOG
     __log << file << " already loaded, skip\n";
 #endif
-    return;
+    return it->second;
   }
 
-  QFontDatabase db;
-  int id = db.addApplicationFont(filename);
-  if( id == -1 ) {
+  auto typeface = SkTypeface::MakeFromFile(file.c_str());
+  if (!typeface) {
 #ifdef HAVE_LOG
     __log << file << " failed to load\n";
 #endif
+    throw std::runtime_error("Failed to load font file: " + file);
   } else {
-    QStringList families = db.applicationFontFamilies(id);
-    if( families.size() > 0 ) {
-      _loaded_families[filename] = families.first();
-      _font.setFamily(families.first());
-    } else {
-#ifdef HAVE_LOG
-    __log << file << " no font families found\n";
-#endif
-    }
+    _file_typefaces[file] = typeface;
   }
+  return typeface;
+}*/
+
+Font_sokol::Font_sokol(const string &family, int style, float size)
+    : Font_sokol(loadTypefaceFromName(family, style), size) {}
+
+Font_sokol::Font_sokol(const string &file, float size)
+    : Font_sokol(loadTypefaceFromFile(file), size) {}
+
+string Font_sokol::getFamily() const {
+  SkString s;
+  _font.getTypeface()->getFamilyName(&s);
+  return s.c_str();
 }
 
-string Font_qt::getFamily() const {
-  return _font.family().toStdString();
-}
-
-int Font_qt::getStyle() const {
+int Font_sokol::getStyle() const {
   int out = PLAIN;
-  if(_font.bold())   out |= BOLD;
-  if(_font.italic()) out |= ITALIC;
+  auto fs = _font.getTypeface()->fontStyle();
+  if (fs.weight() == SkFontStyle::kBold_Weight) out |= BOLD;
+  if (fs.slant() == SkFontStyle::kItalic_Slant) out |= ITALIC;
   return out;
 }
 
-QFont Font_qt::getQFont() const {
+int Font_sokol::getFONScontextIndex() const {
   return _font;
 }
 
-float Font_qt::getSize() const {
-  return _font.pointSizeF();
+float Font_sokol::getSize() const {
+  return _font.getSize();
 }
 
-sptr<Font> Font_qt::deriveFont(int style) const {
-  return sptrOf<Font_qt>(getFamily(), style, getSize());
+sptr<Font> Font_sokol::deriveFont(int style) const {
+  return sptr<Font>(new Font_sokol(getFamily(), style, getSize()));
 }
 
-bool Font_qt::operator==(const Font& ft) const {
-  const Font_qt& o = static_cast<const Font_qt&>(ft);
+bool Font_sokol::operator==(const Font &ft) const {
+  const Font_sokol &o = static_cast<const Font_sokol &>(ft);
 
-  return getFamily()==o.getFamily() && getSize()==o.getSize() &&
-    getStyle()==o.getStyle();
+  return getFamily() == o.getFamily() && getSize() == o.getSize() &&
+         getStyle() == o.getStyle();
 }
 
-bool Font_qt::operator!=(const Font& ft) const {
+bool Font_sokol::operator!=(const Font &ft) const {
   return !(*this == ft);
 }
 
-Font* Font::create(const string& file, float size) {
-  return new Font_qt(file, size);
+Font *Font::create(const string &file, float size) {
+  return new Font_sokol(file, size);
 }
 
-sptr<Font> Font::_create(const string& name, int style, float size) {
-  return sptrOf<Font_qt>(name, style, size);
-}
-
-/**************************************************************************************************/
-
-TextLayout_qt::TextLayout_qt(const std::wstring& src, const sptr<Font_qt>& f) :
-  _font(f->getQFont()),
-  _text(wstring_to_QString(src))
-{
-}
-
-void TextLayout_qt::getBounds(Rect& r) {
-  QFontMetricsF fm(_font);
-  QRectF br(fm.boundingRect(_text));
-
-  r.x = br.left();
-  r.y = br.top();
-  r.w = br.width();
-  r.h = br.height();
-}
-
-void TextLayout_qt::draw(Graphics2D& g2, float x, float y) {
-  Graphics2D_qt& g = static_cast<Graphics2D_qt&>(g2);
-  g.getQPainter()->setFont(_font);
-  g.getQPainter()->drawText(QPointF(x, y), _text);
-}
-
-sptr<TextLayout> TextLayout::create(const std::wstring& src, const sptr<Font>& font) {
-  sptr<Font_qt> f = static_pointer_cast<Font_qt>(font);
-  return sptrOf<TextLayout_qt>(src, f);
+sptr<Font> Font::_create(const string &name, int style, float size) {
+  return sptr<Font>(new Font_sokol(name, style, size));
 }
 
 /**************************************************************************************************/
 
-//Font_qt Graphics2D_qt::_default_font("SansSerif", PLAIN, 20.f);
+TextLayout_skia::TextLayout_skia(const wstring &src, const sptr<Font_skia> &f) :
+    _font(f->getSkFont()),
+    _text(wide2utf8(src.c_str())) {}
 
-Graphics2D_qt::Graphics2D_qt(QPainter* painter)
-    : _painter(painter) {
+void TextLayout_skia::getBounds(_out_ Rect &r) {
+  SkRect rect;
+  _font.measureText(_text.c_str(), _text.size(), SkTextEncoding::kUTF8, &rect);
+  r.x = rect.left();
+  r.y = rect.top();
+  r.w = rect.width();
+  r.h = rect.height();
+}
+
+void TextLayout_skia::draw(Graphics2D &g2, float x, float y) {
+  Graphics2D_skia &g = static_cast<Graphics2D_skia &>(g2);
+  g.getSkCanvas()->drawString(_text.c_str(), x, y, _font, g.getSkPaint());
+}
+
+sptr<TextLayout> TextLayout::create(const wstring &src, const sptr<Font> &font) {
+  sptr<Font_skia> f = static_pointer_cast<Font_skia>(font);
+  return sptr<TextLayout>(new TextLayout_skia(src, f));
+}
+
+/**************************************************************************************************/
+
+Font_skia Graphics2D_skia::_default_font("SansSerif", PLAIN, 20.f);
+
+Graphics2D_skia::Graphics2D_skia(SkCanvas *canvas)
+    : _canvas{canvas} {
   _sx = _sy = 1.f;
+  _paint.setAntiAlias(true);
   setColor(BLACK);
   setStroke(Stroke());
   setFont(&_default_font);
 }
 
-QPainter* Graphics2D_qt::getQPainter() const {
-  return _painter;
-}
-
-QBrush Graphics2D_qt::getQBrush() const {
-  return QBrush(QColor(color_r(_color), color_g(_color),
-                       color_b(_color), color_a(_color)));
-}
-
-void Graphics2D_qt::setPen() {
-
-  QBrush brush(getQBrush());
-
-  Qt::PenCapStyle cap;
-  switch (_stroke.cap) {
-  case CAP_ROUND:
-    cap = Qt::RoundCap;
-    break;
-  case CAP_SQUARE:
-    cap = Qt::SquareCap;
-    break;
-  case CAP_BUTT:
-  default:
-    cap = Qt::FlatCap;
-    break;
-  }
-
-  Qt::PenJoinStyle join;
-  switch (_stroke.join) {
-  case JOIN_BEVEL:
-    join = Qt::BevelJoin;
-    break;
-  case JOIN_ROUND:
-    join = Qt::RoundJoin;
-    break;
-  case JOIN_MITER:
-  default:
-    join = Qt::MiterJoin;
-    break;
-  }
-
-  QPen pen(brush, _stroke.lineWidth, Qt::SolidLine, cap, join);
-  pen.setMiterLimit(_stroke.miterLimit);
-  _painter->setPen(pen);
-}
-
-void Graphics2D_qt::setColor(color c) {
+void Graphics2D_skia::setColor(color c) {
   _color = c;
-  setPen();
+  _paint.setColor(c);
 }
 
-color Graphics2D_qt::getColor() const {
+color Graphics2D_skia::getColor() const {
   return _color;
 }
 
-void Graphics2D_qt::setStroke(const Stroke& s) {
+void Graphics2D_skia::setStroke(const Stroke &s) {
   _stroke = s;
-  setPen();
+  SkPaint::Cap cap;
+  switch (_stroke.cap) {
+    case CAP_ROUND:
+      cap = SkPaint::Cap::kRound_Cap;
+      break;
+    case CAP_SQUARE:
+      cap = SkPaint::Cap::kSquare_Cap;
+      break;
+    case CAP_BUTT:
+    default:
+      cap = SkPaint::Cap::kButt_Cap;
+      break;
+  }
+  _paint.setStrokeCap(cap);
+
+  _paint.setStrokeWidth(s.lineWidth);
+  _paint.setStrokeMiter(s.miterLimit);
+
+  SkPaint::Join join;
+  switch (_stroke.join) {
+    case JOIN_BEVEL:
+      join = SkPaint::kBevel_Join;
+      break;
+    case JOIN_ROUND:
+      join = SkPaint::kRound_Join;
+      break;
+    case JOIN_MITER:
+    default:
+      join = SkPaint::kMiter_Join;
+      break;
+  }
+  _paint.setStrokeJoin(join);
 }
 
-const Stroke& Graphics2D_qt::getStroke() const {
+const Stroke &Graphics2D_skia::getStroke() const {
   return _stroke;
 }
 
-void Graphics2D_qt::setStrokeWidth(float w) {
+void Graphics2D_skia::setStrokeWidth(float w) {
   _stroke.lineWidth = w;
-  setPen();
+  _paint.setStrokeWidth(w);
 }
 
-const Font* Graphics2D_qt::getFont() const {
+const Font *Graphics2D_skia::getFont() const {
   return _font;
 }
 
-void Graphics2D_qt::setFont(const Font* font) {
-  _font = static_cast<const Font_qt*>(font);
+void Graphics2D_skia::setFont(const Font *font) {
+  _font = static_cast<const Font_skia *>(font);
 }
 
-void Graphics2D_qt::translate(float dx, float dy) {
+void Graphics2D_skia::translate(float dx, float dy) {
   //qInfo() << "translate" << dx << dy;
-  _painter->translate(dx, dy);
+  _canvas->translate(dx, dy);
 }
 
-void Graphics2D_qt::scale(float sx, float sy) {
-  //qInfo() << "scale" << sx << sy;
+void Graphics2D_skia::scale(float sx, float sy) {
   _sx *= sx;
   _sy *= sy;
-  _painter->scale(sx, sy);
+  _canvas->scale(sx, sy);
 }
 
-void Graphics2D_qt::rotate(float angle) {
-  //qInfo() << "rotate" << angle;
-  _painter->rotate(qRadiansToDegrees(angle));
+static inline float radiansToDegrees(float angle) {
+  return angle * 180.0f / (float) M_PI;
 }
 
-void Graphics2D_qt::rotate(float angle, float px, float py) {
-
-  //qInfo() << "translate" << px << py << "rotate" << angle;
-  _painter->translate(px, py);
-  _painter->rotate(qRadiansToDegrees(angle));
-  _painter->translate(-px, -py);
+void Graphics2D_skia::rotate(float angle) {
+  _canvas->rotate(radiansToDegrees(angle));
 }
 
-void Graphics2D_qt::reset() {
-  _painter->setTransform(QTransform());
+void Graphics2D_skia::rotate(float angle, float px, float py) {
+  _canvas->translate(px, py);
+  _canvas->rotate(radiansToDegrees(angle));
+  _canvas->translate(-px, -py);
+}
+
+void Graphics2D_skia::reset() {
+  _canvas->resetMatrix();
   _sx = _sy = 1.f;
 }
 
-float Graphics2D_qt::sx() const {
+float Graphics2D_skia::sx() const {
   return _sx;
 }
 
-float Graphics2D_qt::sy() const {
+float Graphics2D_skia::sy() const {
   return _sy;
 }
 
-void Graphics2D_qt::drawChar(wchar_t c, float x, float y) {
-  std::wstring str = {c};
+void Graphics2D_skia::drawChar(wchar_t c, float x, float y) {
+  wstring str = {c};
   drawText(str, x, y);
 }
 
-void Graphics2D_qt::drawText(const std::wstring& t, float x, float y) {
-
-  _painter->setFont(_font->getQFont());
-
-  QString text = wstring_to_QString(t);
-  //qInfo() << "text" << x << y << text << text.toLocal8Bit();
-  //for(size_t i=0; i<t.size(); ++i)
-  //  qInfo() << 'v' << int(t[i]);
-
-  _painter->drawText(QPointF(x, y), text);
+void Graphics2D_skia::drawText(const wstring &t, float x, float y) {
+  auto str = wide2utf8(t.c_str());
+  _paint.setStyle(SkPaint::kFill_Style);
+  _canvas->drawString(str.c_str(), x, y, _font->getSkFont(), _paint);
 }
 
-void Graphics2D_qt::drawLine(float x1, float y1, float x2, float y2) {
-  _painter->drawLine(QPointF(x1, y1), QPointF(x2, y2));
+void Graphics2D_skia::drawLine(float x1, float y1, float x2, float y2) {
+  _paint.setStyle(SkPaint::kStroke_Style);
+  _canvas->drawLine(x1, y1, x2, y2, _paint);
 }
 
-void Graphics2D_qt::drawRect(float x, float y, float w, float h) {
-  _painter->drawRect(QRectF(x, y, w, h));
+void Graphics2D_skia::drawRect(float x, float y, float w, float h) {
+  auto rect = SkRect::MakeXYWH(x, y, w, h);
+  _paint.setStyle(SkPaint::kStroke_Style);
+  _canvas->drawRect(rect, _paint);
 }
 
-void Graphics2D_qt::fillRect(float x, float y, float w, float h) {
-  _painter->fillRect(QRectF(x, y, w, h), getQBrush());
+void Graphics2D_skia::fillRect(float x, float y, float w, float h) {
+  auto rect = SkRect::MakeXYWH(x, y, w, h);
+  _paint.setStyle(SkPaint::kFill_Style);
+  _canvas->drawRect(rect, _paint);
 }
 
-void Graphics2D_qt::drawRoundRect(float x, float y, float w, float h, float rx, float ry) {
-  _painter->drawRoundedRect(QRectF(x, y, w, h), rx, ry);
+void Graphics2D_skia::drawRoundRect(float x, float y, float w, float h, float rx, float ry) {
+  _paint.setStyle(SkPaint::kStroke_Style);
+  auto rect = SkRect::MakeXYWH(x, y, w, h);
+  _canvas->drawRoundRect(rect, rx, ry, _paint);
 }
 
-void Graphics2D_qt::fillRoundRect(float x, float y, float w, float h, float rx, float ry) {
-  _painter->setPen(QPen(Qt::NoPen));
-  _painter->setBrush(getQBrush());
-
-  _painter->drawRoundedRect(QRectF(x, y, w, h), rx, ry);
-
-  setPen();
-  _painter->setBrush(QBrush());
+void Graphics2D_skia::fillRoundRect(float x, float y, float w, float h, float rx, float ry) {
+  _paint.setStyle(SkPaint::kFill_Style);
+  auto rect = SkRect::MakeXYWH(x, y, w, h);
+  _canvas->drawRoundRect(rect, rx, ry, _paint);
 }
 
+const SkPaint &Graphics2D_skia::getSkPaint() const {
+  return _paint;
+}
 
-/**************************************************************************************************/
-
-
+SkCanvas *Graphics2D_skia::getSkCanvas() const {
+  return _canvas;
+}
 //#endif
